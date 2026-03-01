@@ -5,41 +5,37 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// Configure Axios to mimic a browser
-const axiosInstance = axios.create({
-    timeout: 5000,
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9,he;q=0.8',
-        'Referer': 'https://www.oref.org.il/',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Connection': 'keep-alive'
-    }
-});
+const pikudHaoref = require('pikud-haoref-api');
 
-app.get('/api/alerts', async (req, res) => {
-    try {
-        // Attempt to fetch from an API that doesn't block Vercel IPs
-        const response = await axiosInstance.get('https://api.redalert.me/mac/alerts');
-
-        // If the response is empty (no alerts), Oref usually returns empty string or minimal content
-        if (!response.data || typeof response.data === 'string' && response.data.trim().length === 0) {
-            return res.json({ id: "0", title: "none", data: [] });
+app.get('/api/alerts', (req, res) => {
+    pikudHaoref.getActiveAlert(function (err, alert) {
+        if (err) {
+            console.error('Error fetching Oref data:', err.message);
+            // Return a structured error response
+            return res.status(500).json({
+                error: 'Failed to fetch alerts',
+                details: err.message
+            });
         }
 
-        // Return the actual JSON data
-        return res.json(response.data);
+        // alert format is { type: 'none', cities: [] } or { type: 'missiles', cities: ['Tel Aviv'] }
+        // We will adapt it slightly to match what the ESP32 expects, or just send it as is:
+        // By default, the original API returned an object with 'id', 'title', 'data' array.
+        // Let's format it in a way the ESP32 code recognizes!
 
-    } catch (error) {
-        console.error('Error fetching Oref data:', error.message);
+        let responsePayload;
+        if (alert.type === 'none' || !alert.cities || alert.cities.length === 0) {
+            responsePayload = { id: "0", title: "none", data: [] };
+        } else {
+            responsePayload = {
+                id: Date.now().toString(),
+                title: "התרעה",
+                data: alert.cities
+            };
+        }
 
-        // Return a structured error response so the ESP32 doesn't crash on bad JSON
-        return res.status(500).json({
-            error: 'Failed to fetch alerts',
-            details: error.message
-        });
-    }
+        return res.json(responsePayload);
+    });
 });
 
 // Start server locally if not in Vercel environment
