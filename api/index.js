@@ -9,47 +9,44 @@ const pikudHaoref = require('pikud-haoref-api');
 
 app.get('/api/alerts', async (req, res) => {
     try {
-        // Since Oref's Akamai firewall blocks all Vercel/AWS/GCP datacenter IPs,
-        // we use a dedicated community proxy built exactly for this purpose. 
-        // Important: This proxy has no geo-block.
-        const response = await axios.get('https://api.pikudhaoref.me/api/v1/alerts', {
-            timeout: 5000,
+        // Redalert headers + CORS proxy to bypass Datacenter/Akamai IP ban. 
+        // This makes the request look like a standard frontend fetch from a random user.
+        const targetUrl = encodeURIComponent('https://www.oref.org.il/WarningMessages/alert/alerts.json');
+
+        const response = await axios.get(`https://corsproxy.io/?${targetUrl}`, {
             headers: {
-                'Accept': 'application/json'
-            }
+                'Referer': 'https://www.oref.org.il/',
+                'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.97 Safari/537.36",
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            timeout: 5000,
+            responseType: 'arraybuffer'
         });
 
-        // The response looks like: { "alerts": [{ "type": "missiles", "cities": ["Tel Aviv"] }] } 
-        // Or if no alerts: { "alerts": [] }
-        const alertsData = response.data.alerts;
+        let body = response.data.toString('utf-8');
+        body = body.replace(/\x00/g, '').trim();
 
-        if (!alertsData || alertsData.length === 0) {
-            return res.send(""); // Send empty string so ESP32 payload.length() > 5 is false
+        if (body === '') {
+            return res.send(""); // No alerts
         }
 
-        // We collect all unique cities from all active alerts
-        const allCities = new Set();
-        alertsData.forEach(alert => {
-            if (alert.cities) {
-                alert.cities.forEach(city => allCities.add(city));
-            }
-        });
+        const alertData = JSON.parse(body);
 
-        if (allCities.size === 0) {
+        let responsePayload;
+        if (!alertData.data || alertData.data.length === 0) {
             return res.send("");
+        } else {
+            responsePayload = {
+                id: alertData.id || Date.now().toString(),
+                title: alertData.title || "התרעה",
+                data: alertData.data
+            };
         }
-
-        // Format it exactly as the ESP32 expects
-        const responsePayload = {
-            id: Date.now().toString(),
-            title: "התרעה",
-            data: Array.from(allCities)
-        };
 
         return res.json(responsePayload);
 
     } catch (error) {
-        console.error('Error fetching from pikudhaoref.me:', error.message);
+        console.error('Error fetching via CORS proxy:', error.message);
         return res.status(500).json({
             error: 'Failed to fetch alerts',
             details: error.message
