@@ -20,8 +20,8 @@ const axiosInstance = axios.create({
 
 app.get('/api/alerts', async (req, res) => {
     try {
-        // Attempt to fetch from the official Oref API
-        const response = await axiosInstance.get('https://www.oref.org.il/WarningMessages/alert/alerts.json');
+        // Attempt to fetch from an API that doesn't block Vercel IPs
+        const response = await axiosInstance.get('https://api.redalert.me/mac/alerts');
 
         // If the response is empty (no alerts), Oref usually returns empty string or minimal content
         if (!response.data || typeof response.data === 'string' && response.data.trim().length === 0) {
