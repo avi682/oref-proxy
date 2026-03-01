@@ -25,7 +25,7 @@ app.get('/api/alerts', (req, res) => {
 
         let responsePayload;
         if (alert.type === 'none' || !alert.cities || alert.cities.length === 0) {
-            responsePayload = { id: "0", title: "none", data: [] };
+            return res.send(""); // Send empty string so ESP32 payload.length() > 5 is false
         } else {
             responsePayload = {
                 id: Date.now().toString(),
