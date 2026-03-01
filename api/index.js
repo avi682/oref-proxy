@@ -7,35 +7,39 @@ app.use(cors());
 
 const pikudHaoref = require('pikud-haoref-api');
 
-app.get('/api/alerts', (req, res) => {
-    pikudHaoref.getActiveAlert(function (err, alert) {
-        if (err) {
-            console.error('Error fetching Oref data:', err.message);
-            // Return a structured error response
-            return res.status(500).json({
-                error: 'Failed to fetch alerts',
-                details: err.message
-            });
-        }
+app.get('/api/alerts', async (req, res) => {
+    try {
+        // Mako news site mirrors Oref alerts without any geo-blocking or Cloudflare protection
+        const response = await axios.get('https://www.mako.co.il/collab/alerts/alerts.json', {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            timeout: 5000
+        });
 
-        // alert format is { type: 'none', cities: [] } or { type: 'missiles', cities: ['Tel Aviv'] }
-        // We will adapt it slightly to match what the ESP32 expects, or just send it as is:
-        // By default, the original API returned an object with 'id', 'title', 'data' array.
-        // Let's format it in a way the ESP32 code recognizes!
+        // Mako returns { data: [ "city1", "city2" ] }
+        const makoData = response.data;
 
-        let responsePayload;
-        if (alert.type === 'none' || !alert.cities || alert.cities.length === 0) {
+        // Sometimes Mako might return empty strings or arrays if no alerts are present
+        if (!makoData || !makoData.data || !Array.isArray(makoData.data) || makoData.data.length === 0) {
             return res.send(""); // Send empty string so ESP32 payload.length() > 5 is false
-        } else {
-            responsePayload = {
-                id: Date.now().toString(),
-                title: "התרעה",
-                data: alert.cities
-            };
         }
+
+        const responsePayload = {
+            id: Date.now().toString(),
+            title: "התרעה",
+            data: makoData.data
+        };
 
         return res.json(responsePayload);
-    });
+
+    } catch (error) {
+        console.error('Error fetching Mako data:', error.message);
+        return res.status(500).json({
+            error: 'Failed to fetch alerts',
+            details: error.message
+        });
+    }
 });
 
 // Start server locally if not in Vercel environment
